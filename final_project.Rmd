@@ -1,0 +1,702 @@
+---
+title: "Final Project"
+author: "Dvija Shah"
+date: "2023-04-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+EFFECT OF DEMOGRAPHICS ON NEIGHBORHOOD DEVELOPMENT:
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(sqldf)
+library(sf)
+require(ggplot2)
+require(ggmap)
+library(knitr)
+```
+
+```{r}
+#read the dataset
+building_permits <- read_csv('C:/Users/Dvija Shah/Desktop/Dvija/Courses/PPUA/Permits.Records.2021.csv')
+head(building_permits,10)
+```
+
+```{r}
+#remove the null values
+building_permits <- na.omit(building_permits)
+```
+
+```{r}
+colSums(is.na(building_permits))
+```
+
+```{r}
+unique(building_permits$NSA_NAME)
+```
+
+```{r}
+unique(building_permits$OCCUPANCY)
+```
+
+```{r}
+#remove 0 values for sq_feet and declared valuation
+building_permits <- building_permits[building_permits$sq_feet != 0, ]
+building_permits <- building_permits[building_permits$DECLARED_VALUATION != 0, ]
+```
+
+Creating new features from existing features
+
+```{r}
+#re-categorizing the OCCUPANCY variable and creating occupancy_new feature.
+
+building_permits$occupancy_new <- ifelse(building_permits$OCCUPANCY %in% c("1-4FAM", "1-7FAM", "1-2FAM", "1-3FAM", "1Unit"), "Residential", 
+ifelse(building_permits$OCCUPANCY %in% c("COMM", "Comm"), "Commercial", 
+ifelse(building_permits$OCCUPANCY %in% c("MIXED", "Mixed"), "Mixed", 
+ifelse(building_permits$OCCUPANCY %in% c("Multi", "4unit", "5unit", "2unit", "3unit", "6unit", "7unit", "6Unit", "4Unit"), "Multi-Unit", 
+ifelse(building_permits$OCCUPANCY %in% c("VacLd", "Other"), "Other", "Unknown")))))
+```
+
+```{r}
+unique(building_permits$occupancy_new)
+```
+
+```{r}
+#Plotting the Number of Building Permits by occupancy_new type.
+ggplot(building_permits, aes(x = occupancy_new, fill=occupancy_new)) +
+  geom_bar() +
+  labs(title = "Number of Building Permits by Occupancy Type",
+       x = "Occupancy Type",
+       y = "Count")
+```
+
+Creating new features from existing features
+
+```{r}
+#Creating a new feature Project_Type from the existing flag variables.
+building_permits$Project_Type <- NA
+
+building_permits$Project_Type[building_permits$newcon == 1] <- "New Construction"
+building_permits$Project_Type[building_permits$addition == 1] <- "Addition"
+building_permits$Project_Type[building_permits$demo == 1] <- "Demolition"
+building_permits$Project_Type[building_permits$reno == 1] <- "Renovation"
+
+building_permits$Project_Type <- as.factor(building_permits$Project_Type)
+```
+
+```{r}
+#Plotting the Number of building Permits by Project_Type
+library(ggplot2)
+ggplot(building_permits, aes(x = Project_Type, fill=Project_Type)) +
+  geom_bar() +
+  labs(title = "Number of Building Permits by Project Type",x = "Project Type", y = "Count") +
+  theme_minimal()
+```
+
+Creating new features from existing features
+
+```{r}
+# Create the issue_year from the Issued_Date variable.
+building_permits$ISSUED_DATE <- as.Date(building_permits$ISSUED_DATE)
+building_permits$issue_year <- as.integer(format(building_permits$ISSUED_DATE, "%Y"))
+```
+
+```{r}
+# Plotting the frequency of building permits by year using a histogram
+ggplot(building_permits, aes(x = issue_year)) +
+  geom_histogram(binwidth = 1, color = "black") +
+  labs(title = "Frequency of Building Permits by Year", x = "Year", y = "Frequency") +
+  theme_classic()
+```
+
+Now we will work on constructing our latent construct Neighborhood Development. For
+
+Aggregating the PermitNumber\~CT_ID_10 gives us the total number of Permits for each neighborhood in the CT_ID_10.
+
+```{r}
+nbhd_permits_issued <-aggregate(PermitNumber~CT_ID_10,data=building_permits,length)
+head(nbhd_permits_issued)
+```
+
+```{r}
+nbhd_permits_issued <-aggregate(PermitNumber~CT_ID_10,data=building_permits,length)
+nbhd_permits_issued
+```
+
+Aggregating the PermitNumber\~CT_ID_10+STATUS gives us the total number of building permits issued for the each neighborhood and permit status.
+
+```{r}
+nbhd_permits_status <-aggregate(PermitNumber~CT_ID_10+STATUS,data=building_permits,length)
+head(nbhd_permits_status)
+```
+
+Aggregating the PermitNumber\~CT_ID_10+STATUS+occupancy_new gives us the total number of building permits issued for the each neighborhood, permit status and occupancy type.
+
+```{r}
+nbhd_status_occupancy <-aggregate(PermitNumber~CT_ID_10+STATUS+occupancy_new,data=building_permits,length)
+head(nbhd_status_occupancy)
+```
+
+Aggregating the PermitNumber\~CT_ID_10+STATUS+occupancy_new+Project_Type gives us the total number of building permits issued for the each neighborhood, permit status, occupancy type and Project_Type.
+
+```{r}
+nbhd_status_occupancy_project <-aggregate(PermitNumber~CT_ID_10+STATUS+occupancy_new+Project_Type,data=building_permits,length)
+nbhd_status_occupancy_project <- nbhd_status_occupancy_project[order(-nbhd_status_occupancy_project$PermitNumber), ]
+head(nbhd_status_occupancy_project)
+```
+
+Aggregating the DECLARED_VALUATION\~CT_ID_10 gives us the average Declared Valuation for each neighborhood.
+
+```{r}
+nbhd_dec_val <- aggregate(DECLARED_VALUATION~CT_ID_10, data=building_permits, mean)
+nbhd_dec_val <- nbhd_dec_val[order(-nbhd_dec_val$DECLARED_VALUATION), ]
+head(nbhd_dec_val,16)
+```
+
+Aggregating the sq_feet\~CT_ID_10 gives us the average Square feet for each neighborhood.
+
+```{r}
+nbhd_sq_ft <- aggregate(sq_feet~CT_ID_10, data=building_permits, mean)
+nbhd_sq_ft  <- nbhd_sq_ft[order(-nbhd_sq_ft$sq_feet), ]
+head(nbhd_sq_ft)
+```
+
+We will be visualizing the dot plot between log_sq_ft and log_dec_val. The log transformation is used to help visualize the data with the wide range of values to help reveal the patterns not seen in the actual data.
+
+```{r}
+nbhd_sq_ft$log_sq_ft <- log(nbhd_sq_ft$sq_feet)
+nbhd_dec_val$log_dec_val <- log(nbhd_dec_val$DECLARED_VALUATION)
+
+# merge data frames
+nbhd_data <- merge(nbhd_sq_ft, nbhd_dec_val, by = "CT_ID_10")
+
+# plot 
+ggplot(nbhd_data, aes(x = log_sq_ft, y = log_dec_val)) +
+  geom_point() +
+  labs(x = "Log Square Footage", y = "Log Declared Valuation") +
+  ggtitle("Relationship Between Log Square Footage and Log Declared Valuation")
+
+```
+
+The plot shows a linearly positive relationship between log_sq_ft and log_dec_val. This means that neighborhoods with larger buildings have higher declared valuations. This means that larger buildings are more valuable as they can accommodate more people or businesses. It would be more attractive to potential buyers.
+
+```{r}
+
+#Removing outliers from declared valuation
+
+# calculate the IQR
+q1 <- quantile(building_permits$DECLARED_VALUATION, 0.01)
+q3 <- quantile(building_permits$DECLARED_VALUATION, 0.90)
+iqr <- q3 - q1
+
+# define the upper and lower bounds for outliers
+upper <- q3 + 1.5*iqr
+lower <- q1 - 1.5*iqr
+
+# remove outliers
+building_permits <- building_permits[building_permits$DECLARED_VALUATION >= lower & building_permits$DECLARED_VALUATION <= upper,]
+
+
+```
+
+```{r}
+
+#Removing outliers from sq_feet
+
+# calculate the IQR
+q1 <- quantile(building_permits$sq_feet, 0.01)
+q3 <- quantile(building_permits$sq_feet, 0.90)
+iqr <- q3 - q1
+
+# define the upper and lower bounds for outliers
+upper <- q3 + 1.5*iqr
+lower <- q1 - 1.5*iqr
+
+# remove outliers
+building_permits <- building_permits[building_permits$sq_feet >= lower & building_permits$sq_feet <= upper,]
+
+```
+
+Making use of sqldf to calculate neighbourhood development.Now I will be using this to analyze further on the questions like Which neighborhoods have seen the most building permits issued in the past year, What types of projects and occupancy are most common in different neighborhoods etc. This will help to get an idea of the neighborhood_development over time.
+
+```{r}
+neighborhood_development <- sqldf("SELECT CT_ID_10, NSA_Name, occupancy_new, Project_Type, 
+                                           COUNT(*) AS no_of_permits_issued,
+                                           AVG(DECLARED_VALUATION) AS avg_declared_valuation,
+                                           AVG(sq_feet) AS avg_sq_ft
+                                    FROM building_permits 
+                                    GROUP BY CT_ID_10, occupancy_new, Project_Type")
+
+neighborhood_development <- neighborhood_development[order(-neighborhood_development$no_of_permits_issued),]
+
+head(neighborhood_development,100)
+```
+
+```{r}
+colnames(neighborhood_development)
+```
+
+```{r}
+# Calculate the maximum values for each variable
+max_no_of_permits_issued <- max(neighborhood_development$no_of_permits_issued)
+max_avg_declared_valuation <- max(neighborhood_development$avg_declared_valuation)
+max_avg_sq_ft <- max(neighborhood_development$avg_sq_ft)
+```
+
+```{r}
+# calculate the total number of permits issued for each occupancy category
+occupancy_counts <- table(neighborhood_development$occupancy_new)
+
+
+# calculate the total number of permits issued for all other occupancy categories
+total_occupancy_counts <- sum(occupancy_counts)
+
+
+# calculate the percentage of permits issued for commercial occupancy among other occupancy categories
+commercial <- occupancy_counts["Commercial"] / total_occupancy_counts 
+
+# calculate the percentage of permits issued for residential occupancy among other occupancy categories
+residential <- occupancy_counts["Residential"] / total_occupancy_counts 
+
+# calculate the percentage of permits issued for multi-unit occupancy among other occupancy categories
+multi_unit <- occupancy_counts["Multi-Unit"] / total_occupancy_counts 
+
+# calculate the percentage of permits issued for mixed occupancy among other occupancy categories
+mixed <- occupancy_counts["Mixed"] / total_occupancy_counts 
+```
+
+```{r}
+# calculate the total number of permits issued for each project type
+project_type_counts <- table(neighborhood_development$Project_Type)
+
+# calculate the total number of permits issued for all other occupancy categories
+total_project_type_counts <- sum(project_type_counts)
+
+# calculate the percentage of permits issued for renovation
+renovation <- project_type_counts['Renovation']/total_project_type_counts
+
+# calculate the percentage of permits issued for addition
+addition <- project_type_counts['Addition']/total_project_type_counts
+
+# calculate the percentage of permits issued for new construction
+new_construction <- project_type_counts['New Construction']/total_project_type_counts
+```
+
+```{r}
+neighborhood_development$neighborhood_dev_score <- (neighborhood_development$no_of_permits_issued/max_no_of_permits_issued)*0.4+                                              (neighborhood_development$avg_declared_valuation/max_avg_declare_valuation)*0.15 +                                            (neighborhood_development$avg_sq_ft/max_avg_sq_ft)*0.15 +
+                                             (((commercial) + (residential) + (multi_unit) + (mixed))*0.15)+
+                                             (((renovation)+ (addition) + (new_construction)) *0.15)
+```
+
+```{r}
+neighborhood_development <-neighborhood_development %>% arrange((neighborhood_dev_score))
+head(neighborhood_development,1000)
+```
+
+```{r}
+summary(neighborhood_development$neighborhood_dev_score)
+```
+
+```{r}
+nbhd <- neighborhood_development %>%
+   group_by(NSA_NAME) %>% summarise(avg_neighborhood_score = max(neighborhood_dev_score))%>%
+  arrange(desc(avg_neighborhood_score))
+```
+
+```{r}
+head(nbhd,50)
+```
+
+NSA_Summary summarizes the development activity for each NSA_NAME. I have sorted it by decreasing value of total_permits, So we can see the neighborhoods with the most development activity at the top of the list. It also displays the avg_declared_valuation, avg_sq_ft and num_projects for each neighborhood.
+
+```{r}
+nbhd_summary <- neighborhood_development %>%
+  group_by(CT_ID_10) %>%
+  summarise(total_permits = sum(no_of_permits_issued),
+            avg_declared_valuation = mean(avg_declared_valuation),
+            avg_sq_ft = mean(avg_sq_ft),
+            num_projects = n()) %>%
+  arrange(desc(total_permits))
+  
+head(nbhd_summary, 10)
+```
+
+```{r}
+# Calculate the maximum values for each variable
+max_total_permits <- max(nbhd_summary$total_permits)
+max_avg_declare_valuation <- max(nbhd_summary$avg_declared_valuation)
+max_avg_sq_ft <- max(nbhd_summary$avg_sq_ft)
+max_num_projects <- max(nbhd_summary$num_projects)
+```
+
+```{r}
+nbhd_summary$neighborhood_dev_score <- (nbhd_summary$total_permits/max_total_permits)*0.25 +
+                                      (nbhd_summary$avg_declared_valuation/max_avg_declare_valuation)*0.25 + 
+                                      (nbhd_summary$avg_sq_ft/max_avg_sq_ft)*0.25 + 
+                                      (nbhd_summary$num_projects/max_num_projects)*0.25
+```
+
+```{r}
+nbhd_summary <- nbhd_summary %>% arrange(desc(neighborhood_dev_score))
+head(nbhd_summary,100)
+```
+
+Find Correlation
+
+```{r}
+redlining <- read_csv('C:/Users/Dvija Shah/Desktop/Dvija/Courses/PPUA/Boston_Tracts_2010_HOLC.csv')
+
+demographics <- read_csv('C:/Users/Dvija Shah/Desktop/Dvija/Courses/PPUA/ACS_1519_TRACT.csv')
+```
+
+
+
+
+```{r}
+#subsetting demographics to keep only numerical columns
+demographics_new = subset(demographics, select = -c(NAME, TOWN, COUNTY, MAtown, MedYrBuilt, TOWN_ID, FIPS_STCO  ))
+```
+
+```{r}
+colnames(demographics_new)
+```
+
+```{r}
+#subsetting neighborhood development to keep only important columns
+neighborhood_dev_new = subset(neighborhood_development, select = -c(no_of_permits_issued, occupancy_new, Project_Type, avg_declared_valuation, avg_sq_ft  ))
+```
+
+```{r}
+#remove the null values
+demographics_new <- na.omit(demographics_new)
+```
+
+```{r}
+#merging the datasets
+tracts<-merge(neighborhood_dev_new,redlining,by='CT_ID_10',all.x=TRUE)
+tracts<-merge(tracts,demographics_new,by='CT_ID_10',all.x=TRUE)
+tracts
+```
+
+```{r}
+dim(tracts)
+```
+
+```{r}
+tracts <- na.omit(tracts)
+```
+
+```{r}
+dim(tracts)
+```
+
+```{r}
+colnames(tracts)
+```
+
+```{r}
+#Remove non-numerical variables:
+numerical_data <- tracts %>%
+  select_if(is.numeric)
+```
+
+```{r}
+colnames(numerical_data)
+```
+
+Correlation and Significance.
+
+I will be checking the correlation of Neighborhood development score with all the numerical variables.
+
+```{r}
+data_cor <- cor(numerical_data[ , colnames(numerical_data) != "neighborhood_dev_score"],  
+                numerical_data$neighborhood_dev_score)
+data_cor   
+```
+
+There is a positive correlation between the neighborhood development score and some of the demographic variables such as TotalPop, Asian, GINI, TotalHouseH, TotalHouseUnits, VacantUnitPer, MedGrossRent, and MedHomeVal. This implies that neighborhoods with higher scores tend to have larger populations, a higher percentage of Asian residents, higher income inequality (as measured by GINI), more total households and units, higher vacancy rates, and more expensive rental and housing prices.
+
+There is a negative correlation between the neighborhood development score and some other demographic variables such as CT_ID_10, PopDen, SexRatio, AgeU18, Age3564, ForBorn, Hispanic, FamHousePer, FemHeadPer, GrandHeadPer, HSGrad, SomeColl, Commute3060, Commute6090, CommuteOver90, ByAuto, ByPubTrans, and MedYrBuiltRaw. This implies that neighborhoods with higher scores tend to have a lower number of census tracts, lower population density, lower ratios of males to females, lower percentages of residents under 18 and between 35-64 years old, fewer foreign-born residents, lower percentages of Hispanic residents, fewer family households, fewer female-headed households, fewer grandparent-headed households, lower percentages of high school and some college graduates, longer commute times for certain time intervals, lower percentages of residents commuting by car or public transportation, and older housing stock.
+
+The following variables have a positive correlation with the neighborhood development score:
+
+TotalPop (correlation score of 0.0598): This variable measures the total population of the neighborhood. Neighborhoods with larger populations tend to have more economic activity and social amenities, which may contribute to higher neighborhood development scores.
+
+Asian (correlation score of 0.0502): This variable measures the percentage of Asian residents in the neighborhood. It is possible that neighborhoods with higher percentages of Asian residents have more access to economic and social resources, contributing to higher neighborhood development scores.
+
+GINI (correlation score of 0.0747): This variable measures income inequality in the neighborhood, with higher scores indicating greater inequality. It is possible that neighborhoods with higher levels of income inequality also have greater economic activity and investment, contributing to higher neighborhood development scores.
+
+TotalHouseH (correlation score of 0.0732): This variable measures the total number of households in the neighborhood. Neighborhoods with more households may have more economic activity and investment, contributing to higher neighborhood development scores.
+
+TotalHouseUnits (correlation score of 0.0903): This variable measures the total number of housing units in the neighborhood. Similar to TotalHouseH, neighborhoods with more housing units may have more economic activity and investment, contributing to higher neighborhood development scores.
+
+VacantUnitPer (correlation score of 0.0874): This variable measures the percentage of vacant housing units in the neighborhood. Neighborhoods with lower percentages of vacant housing units may have more economic activity and investment, contributing to higher neighborhood development scores.
+
+MedGrossRent (correlation score of 0.0406): This variable measures the median gross rent (i.e., rent before deductions for utilities, etc.) in the neighborhood. Neighborhoods with higher median rents may have more economic activity and investment, contributing to higher neighborhood development scores.
+
+MedHomeVal (correlation score of 0.0833): This variable measures the median home value in the neighborhood. Neighborhoods with higher median home values may have more economic activity and investment, contributing to higher neighborhood development scores.
+
+In summary, the positively correlated variables with neighborhood development score suggest that neighborhoods with larger populations, higher levels of income inequality, more households and housing units, and higher median rents and home values tend to have higher neighborhood development scores. Meanwhile, the correlation with the percentage of Asian residents may suggest that neighborhoods with more access to economic and social resources also tend to have higher neighborhood development scores.
+
+The following variables have a negative correlation with the neighborhood development score:
+
+PopDen: PopDen refers to population density, and a negative correlation with neighborhood development score means that neighborhoods with higher scores tend to have lower population densities. This may suggest that neighborhoods with more space and lower population densities are more desirable and, therefore, have higher development scores.
+
+SexRatio: SexRatio refers to the ratio of males to females in the neighborhood. A negative correlation with neighborhood development score means that neighborhoods with higher scores tend to have a more balanced sex ratio or slightly more females than males. This may suggest that neighborhoods with more gender balance are more desirable and, therefore, have higher development scores.
+
+AgeU18: AgeU18 refers to the percentage of the population under 18 years old. A negative correlation with neighborhood development score means that neighborhoods with higher scores tend to have a lower percentage of children. This may suggest that neighborhoods with fewer children are more desirable and, therefore, have higher development scores.
+
+Age3564: Age3564 refers to the percentage of the population between 35 and 64 years old. A negative correlation with neighborhood development score means that neighborhoods with higher scores tend to have a lower percentage of people in this age group. This may suggest that neighborhoods with a younger or older population are more desirable and, therefore, have higher development scores.
+
+ForBorn: ForBorn refers to the percentage of the population that was born outside the United States. A negative correlation with neighborhood development score means that neighborhoods with higher scores tend to have a lower percentage of foreign-born residents. This may suggest that neighborhoods with a higher proportion of U.S.-born residents are more desirable and, therefore, have higher development scores.
+
+Hispanic: Hispanic refers to the percentage of the population that identifies as Hispanic or Latino. A negative correlation with neighborhood development score means that neighborhoods with higher scores tend to have a lower percentage of Hispanic residents. This may suggest that neighborhoods with fewer Hispanic residents are more desirable and, therefore, have higher development scores.
+
+FamHousePer: FamHousePer refers to the percentage of households that are family households (i.e., households with two or more people related by birth, marriage, or adoption). A negative correlation with neighborhood development score means that neighborhoods with higher scores tend to have a lower percentage of family households. This may suggest that neighborhoods with more single-person or non-family households are more desirable and, therefore, have higher development scores.
+
+FemHeadPer: FemHeadPer refers to the percentage of households that are headed by females. A negative correlation with neighborhood development score means that neighborhoods with higher scores tend to have a lower percentage of female-headed households. This may suggest that neighborhoods with fewer female-headed households are more desirable and, therefore, have higher development scores.
+
+Commute3060: Commute3060 refers to the percentage of workers in the neighborhood who have a commute time between 30 and 60 minutes. A negative correlation with neighborhood development score means that neighborhoods with higher scores tend to have a lower percentage of workers with commute times in this range. This may suggest that neighborhoods with shorter or longer commute times are more desirable and, therefore, have higher development scores.
+
+Bi-Variate Analysis
+
+```{r}
+b1 <- lm(neighborhood_dev_score~GINI, data=numerical_data)
+b1
+```
+
+The intercept of the model is 0.2553, which represents the expected value of the neighborhood development score when the GINI index is zero. The coefficient for GINI is 0.0258, which means that for each unit increase in the GINI index, the neighborhood development score is expected to increase by 0.0258 units, all else being equal.
+
+```{r}
+b2 <- lm(neighborhood_dev_score~ByWalk, data=numerical_data)
+b2
+```
+
+The intercept coefficient is 0.26597, which means that if "ByWalk" were zero (i.e., no walking required to reach amenities), the predicted value of "neighborhood_dev_score" would be 0.26597.The coefficient of "ByWalk" is 0.01112, which means that for each additional unit of "ByWalk" (i.e., for each additional unit of walking required to reach amenities), the predicted value of "neighborhood_dev_score" would increase by 0.01112.
+
+```{r}
+b3 <- lm(neighborhood_dev_score~MedHomeVal, data=numerical_data)
+b3
+```
+
+The intercept coefficient is 0.2618, which means that if "MedHomeVal" were zero (i.e., no median home value in the neighborhood), the predicted value of "neighborhood_dev_score" would be 0.2618. The coefficient of "MedHomeVal" is 9.999e-09, which is in scientific notation and can be rewritten as 0.000000009999. This coefficient is very small, which means that for each additional unit of "MedHomeVal" (i.e., for each additional dollar in median home value), the predicted value of "neighborhood_dev_score" would increase by a very small amount.
+
+```{r}
+b4 <- lm(neighborhood_dev_score~Hispanic, data=numerical_data)
+b4
+```
+
+The intercept coefficient is 0.268819, which means that if "Hispanic" were zero (i.e., no Hispanic population in the neighborhood), the predicted value of "neighborhood_dev_score" would be 0.268819. The coefficient of "Hispanic" is -0.005656, which means that for each additional unit of "Hispanic" (i.e., for each additional percentage point of Hispanic population in the neighborhood), the predicted value of "neighborhood_dev_score" would decrease by 0.005656.
+
+```{r}
+b5 <- lm(neighborhood_dev_score~HSGrad, data=numerical_data)
+b5
+```
+
+The intercept coefficient is 0.269506, which means that if "HSGrad" were zero (i.e., no high school graduates in the neighborhood), the predicted value of "neighborhood_dev_score" would be 0.269506. The coefficient of "HSGrad" is -0.009384, which means that for each additional unit of "HSGrad" (i.e., for each additional percentage point of high school graduates in the neighborhood), the predicted value of "neighborhood_dev_score" would decrease by 0.009384.
+
+Multi-variate Analysis
+
+```{r}
+m1 <- lm(neighborhood_dev_score ~ GINI + AgeU18 + Age1834 + Age3564 +
+             White + Black + Asian + Hispanic + FamHousePer + FemHeadPer + 
+             LessThanHS + HSGrad + SomeColl + Bach + Master + Prof +
+             CommuteLess10 + Commute1030 + Commute3060 + Commute6090 +
+           ByAuto + ByPubTrans + ByBike + ByWalk + 
+           TotalHouseUnits + VacantUnitPer + MedGrossRent + MedHomeVal, 
+             data = numerical_data)
+
+summary(m1)
+```
+
+The model output shows that the intercept term is statistically significant (p \< 0.001), indicating that even if all the predictors have a value of zero, there is still a positive expected score for neighborhood development. However, several predictors are not statistically significant at conventional levels (p \> 0.05), such as GINI, AgeU18, Age1834, Age3564, White, Black, Asian, Hispanic, FamHousePer, FemHeadPer, LessThanHS, SomeColl, Bach, Master, Commute1030, Commute3060, Commute6090, ByAuto, ByPubTrans, ByBike, and ByWalk.
+
+Some variables show a statistically significant positive association with neighborhood development, such as TotalHouseUnits (p = 0.006), MedHomeVal (p = 0.040), and Prof (p = 0.022). Conversely, there are some variables that have a statistically significant negative association with neighborhood development, such as HSGrad (p = 0.093) and VacantUnitPer (p = 0.101).
+
+The R-squared value of the model is 0.029, indicating that only 2.9% of the variance in neighborhood development scores is explained by the predictors in the model. The adjusted R-squared value is even lower (0.014), which suggests that the model may be overfitting the data.
+
+In summary, the model does not provide a strong explanation for the variability in neighborhood development scores, and many of the predictors do not have a statistically significant relationship with the outcome variable. Therefore, the model may not be useful for predicting neighborhood development scores.
+
+This output is the result of a multiple linear regression analysis where neighborhood_dev_score is the dependent variable, and GINI, AgeU18, Age1834, Age3564, White, Black, Asian, Hispanic, FamHousePer, FemHeadPer, LessThanHS, HSGrad, SomeColl, Bach, Master, Prof, CommuteLess10, Commute1030, Commute3060, Commute6090, ByAuto, ByPubTrans, ByBike, ByWalk, TotalHouseUnits, VacantUnitPer, MedGrossRent, and MedHomeVal are independent variables.
+
+Looking at the coefficients table, we can see that most of the independent variables have p-values greater than 0.05, which indicates that they are not statistically significant predictors of neighborhood_dev_score. The intercept is statistically significant (p-value \< 0.001), but the GINI coefficient is not significant (p-value = 0.974), which suggests that income inequality (measured by GINI) is not related to neighborhood_dev_score.
+
+However, there are a few independent variables that are statistically significant at the 0.05 level or better. For example, the coefficient for Prof is -0.1215 with a p-value of 0.0223, which suggests that a higher percentage of professionals in a neighborhood is associated with lower neighborhood_dev_score. Similarly, the coefficient for MedHomeVal is positive and statistically significant (p-value = 0.0402), which suggests that higher median home values in a neighborhood are associated with higher neighborhood_dev_score.
+
+Overall, the model explains a small proportion of the variation in neighborhood_dev_score, with an adjusted R-squared value of 0.0141. Therefore, the model may not be a good fit for predicting neighborhood_dev_score, and more research may be needed to identify other relevant variables that may better explain neighborhood development.
+
+```{r}
+
+m2 <- lm(neighborhood_dev_score ~ GINI + TotalHouseUnits + VacantUnitPer + MedHomeVal + ByWalk +
+           FemHeadPer + FamHousePer + Hispanic + PopDen + AgeU18 + HSGrad , data= numerical_data)
+           
+summary(m2)
+
+```
+
+In this model, the intercept, TotalHouseUnits, MedHomeVal, and PopDen are statistically significant at the 0.05 level, whereas the other independent variables are not significant.
+
+The R-squared value indicates that the model explains only 2.4% of the variance in the response variable, suggesting that the model does not fit the data well. The adjusted R-squared value is slightly lower than the R-squared value, suggesting that the addition of independent variables did not improve the model's fit.
+
+The F-statistic tests the overall significance of the model by comparing the variation in the response variable explained by the model to the variation that is not explained by the model. The p-value associated with the F-statistic is significant at the 0.05 level, indicating that the model as a whole is statistically significant.
+
+In conclusion, the analysis suggests that only a few independent variables, including TotalHouseUnits, MedHomeVal, and PopDen, have a statistically significant relationship with the neighborhood development score, while the other independent variables do not significantly impact the response variable. However, the overall model has limited predictive power and does not explain much of the variation in the response variable.
+
+The analysis indicates that only five of the 11 independent variables in the model have a statistically significant effect on the neighborhood development score at a 95% confidence level. The positive coefficients of TotalHouseUnits, MedHomeVal, PopDen, and GINI suggest that an increase in the total number of households, median home value, population density, and Gini index is associated with an increase in the neighborhood development score. On the other hand, the negative coefficient of ByWalk suggests that an increase in the percentage of people who walk to work is associated with a decrease in the neighborhood development score.
+
+However, it is important to note that the model only explains a small percentage (2.4%) of the variance in the neighborhood development score, indicating that there may be other important factors that affect the neighborhood development score that are not included in the model. Therefore, while the variables in the model have statistically significant effects on the neighborhood development score, the model's low R-squared value suggests that these variables may not fully capture the complexity of factors that affect neighborhood development.
+
+
+
+```{r}
+
+m3 <- lm(neighborhood_dev_score ~ redline, data= numerical_data)
+           
+summary(m3)
+
+```
+
+Visualizations
+
+```{r}
+base1<-ggplot(data=numerical_data, aes(x=neighborhood_dev_score, y=TotalHouseUnits)) + 
+    geom_point() + xlab("Neighborhood Development Score") + 
+    ylab("Total House Units")
+base1
+```
+
+```{r}
+base1 + geom_smooth(method=lm)
+```
+
+```{r}
+base2<-ggplot(data=numerical_data, aes(x=neighborhood_dev_score, y=GINI)) + 
+    geom_point() + xlab("Neighborhood Development Score") + 
+    ylab("GINI")
+base2
+```
+
+```{r}
+base2 + geom_smooth(method=lm)
+```
+
+```{r}
+base3<-ggplot(data=numerical_data, aes(x=neighborhood_dev_score, y=ByWalk)) + 
+    geom_point() + xlab("Neighborhood Development Score") + 
+    ylab("By Walk")
+base3
+```
+
+```{r}
+base3 + geom_smooth(method=lm)
+```
+
+```{r}
+base4<-ggplot(data=numerical_data, aes(x=neighborhood_dev_score, y=MedHomeVal)) + 
+    geom_point() + xlab("Neighborhood Development Score") + 
+    ylab("Medium Home Valuation")
+base4
+```
+
+```{r}
+base4 + geom_smooth(method=lm)
+```
+
+```{r}
+base5<-ggplot(data=numerical_data, aes(x=neighborhood_dev_score, y=Hispanic)) + 
+    geom_point() + xlab("Neighborhood Development Score") + 
+    ylab("Hispanic")
+base5
+```
+
+```{r}
+base5 + geom_smooth(method=lm)
+```
+
+```{r}
+base6<-ggplot(data=numerical_data, aes(x=neighborhood_dev_score, y=HSGrad)) + 
+    geom_point() + xlab("Neighborhood Development Score") + 
+    ylab("High School Graduate")
+base6
+```
+
+```{r}
+base6 + geom_smooth(method=lm)
+```
+
+```{r}
+tracts_geo<-st_read("C:/Users/Dvija Shah/Desktop/Dvija/Courses/PPUA/shape/Tracts_Boston_2010_BARI/Tracts_Boston BARI.shp")
+```
+
+```{r}
+tracts_geo<-merge(tracts_geo,tracts,by='CT_ID_10',all.x=TRUE)
+```
+
+```{r}
+tracts_geo
+```
+
+```{r}
+Boston<-get_map(location=c(left = -71.193799, 
+                           bottom = 42.22, 
+                           right = -70.985746, 
+                           top = 42.43),
+                source="stamen")
+Bostonmap<-ggmap(Boston)
+Bostonmap
+```
+
+```{r}
+plot(tracts_geo['neighborhood_dev_score'], main = 'Neighborhood Development Score in Boston', breaks='quantile')
+```
+
+```{r}
+plot(tracts_geo['MedHomeVal'], main = 'Medium Home Valuation in Boston', breaks='quantile')
+```
+
+```{r}
+plot(tracts_geo['GINI'], main = 'GINI in Boston', breaks='quantile')
+```
+
+```{r}
+plot(tracts_geo['ByWalk'], main = 'Commute by Walk in Boston', breaks='quantile')
+```
+```{r}
+plot(tracts_geo['AgeU18'], main = 'Percentage of Age Under 18 population in Boston', breaks='quantile')
+```
+
+```{r}
+plot(tracts_geo['Age1834'], main = 'Percentage of Age 18-34 population in Boston', breaks='quantile')
+```
+
+```{r}
+plot(tracts_geo['CommuteLess10'], main = 'Commute less than 10 minutes in Boston', breaks='quantile')
+```
+
+```{r}
+plot(tracts_geo['Hispanic'], main = 'Hispanic Community in Boston', breaks='quantile')
+```
+
+```{r}
+plot(tracts_geo['FemHeadPer'], main = 'Female Head per Household in Boston', breaks='quantile')
+```
+
+```{r}
+plot(tracts_geo['redline'], main = 'Redlining in Boston', breaks='quantile')
+```
+
+```{r}
+plot(tracts_geo['White'], main = 'White population in Boston', breaks='quantile')
+```
+
+```{r}
+plot(tracts_geo['LessThanHS'], main = 'Population with Less than High School education in Boston', breaks='quantile')
+```
+```{r}
+plot(tracts_geo['Master'], main = 'Population with Masters education in Boston', breaks='quantile')
+```
